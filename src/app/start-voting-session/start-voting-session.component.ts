@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 
 import {BackendService} from '../backend.service';
 import { tap, filter, map, shareReplay, share, switchMap,  } from 'rxjs/operators';
-import { Subscription, merge, fromEvent, combineLatest, of, } from 'rxjs';
+import { Subscription, merge, fromEvent, combineLatest, of, Observable, } from 'rxjs';
 
 class MockBackendService {
   getVotingEvents() {
@@ -30,6 +30,40 @@ export class StartVotingSessionComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
 
+    const eventSelectionChanged$ = fromEvent(document.getElementById('selectEvent'), 'change')
+    .pipe(
+      map((event: any) => event.target.value)
+    );
+
+    const firstName$ = fromEvent(document.getElementById('firstName'), 'keyup')
+    .pipe(
+      map((event: any) => event.target.value)
+    );
+    const lastName$ = fromEvent(document.getElementById('lastName'), 'keyup')
+    .pipe(
+      map((event: any) => event.target.value)
+    );
+
+    const buttonClick$ = fromEvent(document.getElementById('startButton'), 'click');
+
+    this.subscription = this.goToNext$(eventSelectionChanged$, firstName$, lastName$, buttonClick$)
+    .subscribe(
+      data => {
+        console.log(data);
+      },
+      console.error,
+      () => {
+        console.log('Done');
+      }
+    );
+  }
+
+  goToNext$(
+    eventSelectionChanged$: Observable<any>,
+    firstName$: Observable<string>,
+    lastName$: Observable<string>,
+    buttonClick$: Observable<any>
+  ) {
     const votingEvents$ = this.backend.getVotingEvents()
     .pipe(
       shareReplay(1)
@@ -48,23 +82,12 @@ export class StartVotingSessionComponent implements OnInit, OnDestroy {
       share(),
       tap(this.buildEventSelect)
     );
-
-    const eventSelectionChanged$ = moreThanOneEvent$
+    const eventSelectedChanged$ = moreThanOneEvent$
     .pipe(
-      switchMap(() => fromEvent(document.getElementById('selectEvent'), 'change')),
-      map((event: any) => event.target.value)
+      switchMap(() => eventSelectionChanged$),
     );
 
-    const votingEvent$ = merge(justOneEvent$, eventSelectionChanged$);
-
-    const firstName$ = fromEvent(document.getElementById('firstName'), 'keyup')
-    .pipe(
-      map((event: any) => event.target.value)
-    );
-    const lastName$ = fromEvent(document.getElementById('lastName'), 'keyup')
-    .pipe(
-      map((event: any) => event.target.value)
-    );
+    const votingEvent$ = merge(justOneEvent$, eventSelectedChanged$);
 
     const inputData$ = combineLatest(votingEvent$, firstName$, lastName$)
     .pipe(
@@ -72,24 +95,14 @@ export class StartVotingSessionComponent implements OnInit, OnDestroy {
         const isValidInput = this.isInputDataValid(event, firstName, lastName);
         const button = document.getElementById('startButton') as HTMLButtonElement;
         button.disabled = !isValidInput;
-      })
+      }),
+      filter(([event, firstName, lastName])  => this.isInputDataValid(event, firstName, lastName))
     );
 
-    const buttonClick$ = fromEvent(document.getElementById('startButton'), 'click');
-
-    // this.subscription = merge(justOneEvent$, moreThanOneEvent$)
-    // this.subscription = votingEvent$
-    // this.subscription = combineLatest(votingEvent$, firstName$, lastName$)
-    this.subscription = combineLatest(buttonClick$, inputData$)
-    .subscribe(
-      data => {
-        console.log(data);
-      },
-      console.error,
-      () => {
-        console.log('Done');
-      }
-    );
+    // return merge(justOneEvent$, moreThanOneEvent$);  // show that we build the select or the lable html
+    // return votingEvent$; // show that change in the select is reflected in a new votingEvent
+    // return combineLatest(votingEvent$, firstName$, lastName$); // show that you get the 3 elements of the input
+    return combineLatest(buttonClick$, inputData$);
   }
 
   ngOnDestroy() {
@@ -104,6 +117,7 @@ export class StartVotingSessionComponent implements OnInit, OnDestroy {
   }
   buildEventSelect(votingEvents: any[]) {
     const select: any = document.getElementById('selectEvent');
+    select.style.display = 'block';
     votingEvents.map(event => {
       const option = document.createElement('option');
       option.text = event.name;
